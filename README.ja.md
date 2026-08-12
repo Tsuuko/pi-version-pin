@@ -32,24 +32,38 @@ pi install npm:@tsuuko/pi-version-pin
 
 ## コマンド
 
+### 現在のバージョンを表示する
+
+```text
+/packages
+```
+
+npmへアクセスせず、現在インストールされているバージョンを表示します。
+
+```text
+pi-chrome      0.15.38
+pi-web-access  1.8.2
+pi-tps-status  0.4.1
+```
+
 ### 更新を確認する
 
 ```text
-/packages-check
+/packages check
 ```
 
 インストール済みバージョンとnpmの`latest`タグを比較します。
 
 ```text
-pi-chrome         0.15.38  → 0.15.41
-pi-web-access      1.8.2   ✓ latest
-pi-tps-status      0.4.1   → 0.4.3
+pi-chrome      0.15.38  → 0.15.41
+pi-web-access  1.8.2    ✓ latest
+pi-tps-status  0.4.1    → 0.4.3
 ```
 
 ### すべて更新する
 
 ```text
-/packages-check update
+/packages update
 ```
 
 設定済みのnpmパッケージをすべて`latest`へ更新し、インストールされた正確なバージョンで再固定してからpiをリロードします。途中で1件失敗しても残りの更新は続行され、最後に失敗内容が表示されます。

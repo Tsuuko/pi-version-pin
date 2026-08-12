@@ -71,6 +71,7 @@ export function formatReport(rows: ReportRow[]): string {
     .map((row) => {
       const prefix = `${displayName(row).padEnd(nameWidth)}  ${row.current.padEnd(versionWidth)}`;
       if (row.error) return `${prefix}  ! ${row.error.replace(/\s+/g, " ").trim()}`;
+      if (!row.latest) return prefix.trimEnd();
       return row.latest === row.current ? `${prefix}  ✓ latest` : `${prefix}  → ${row.latest}`;
     })
     .join("\n");
@@ -222,6 +223,16 @@ async function lookupLatestVersions(
   });
 }
 
+export async function listPackages(cwd: string, projectTrusted: boolean) {
+  const { settings, packages, errors: settingsErrors } = createManagers(cwd, projectTrusted);
+  const { valid, errors } = await getNpmPackages(settings, packages);
+  return [
+    ...settingsErrors,
+    ...errors,
+    ...valid.map((pkg) => ({ name: pkg.name, scope: pkg.scope, current: pkg.current })),
+  ];
+}
+
 export async function checkPackages(pi: ExtensionAPI, cwd: string, projectTrusted: boolean) {
   const { settings, packages, errors: settingsErrors } = createManagers(cwd, projectTrusted);
   const { valid, errors } = await getNpmPackages(settings, packages);
@@ -305,7 +316,7 @@ export default function versionPinExtension(pi: ExtensionAPI) {
   pi.on("session_start", async (event, ctx) => {
     if (event.reason !== "startup") return;
 
-    // Startup pinning reads installed manifests only; network checks stay behind /packages-check.
+    // Startup pinning reads installed manifests only; network checks stay behind /packages check.
     try {
       const { pinned, errors } = await pinInstalledPackages(ctx.cwd, ctx.isProjectTrusted());
       if (pinned.length > 0) ctx.ui.notify(`Pinned pi packages: ${pinned.join(", ")}`, "info");
@@ -315,37 +326,36 @@ export default function versionPinExtension(pi: ExtensionAPI) {
     }
   });
 
-  pi.registerCommand("packages-check", {
-    description: "Check or update configured npm packages",
-    getArgumentCompletions: (prefix) =>
-      "update".startsWith(prefix) ? [{ value: "update", label: "update" }] : null,
+  pi.registerCommand("packages", {
+    description: "List, check, or update configured npm packages",
+    getArgumentCompletions: (prefix) => {
+      const actions = ["check", "update"];
+      const matches = actions.filter((action) => action.startsWith(prefix));
+      return matches.length > 0 ? matches.map((value) => ({ value, label: value })) : null;
+    },
     handler: async (args, ctx) => {
       const action = args.trim();
-      if (action && action !== "update") {
-        ctx.ui.notify("Usage: /packages-check [update]", "error");
+      if (action && action !== "check" && action !== "update") {
+        ctx.ui.notify("Usage: /packages [check|update]", "error");
         return;
       }
 
-      showInChat(action === "update" ? "Updating packages…" : "Checking packages…");
-      let reload = false;
+      if (action) showInChat(action === "update" ? "Updating packages…" : "Checking packages…");
       try {
-        if (!action) {
-          const rows = await checkPackages(pi, ctx.cwd, ctx.isProjectTrusted());
-          showInChat(rows.length > 0 ? formatReport(rows) : "No configured npm packages");
-        } else {
+        if (action === "update") {
           const result = await updatePackages(pi, ctx.cwd, ctx.isProjectTrusted());
           showInChat(
             result.rows.length > 0 ? formatReport(result.rows) : "No configured npm packages",
           );
-          reload = result.needsReload;
+          if (result.needsReload) await ctx.reload();
+        } else {
+          const rows = action
+            ? await checkPackages(pi, ctx.cwd, ctx.isProjectTrusted())
+            : await listPackages(ctx.cwd, ctx.isProjectTrusted());
+          showInChat(rows.length > 0 ? formatReport(rows) : "No configured npm packages");
         }
       } catch (error) {
         showInChat(`Package operation failed: ${errorMessage(error)}`);
-      }
-
-      if (reload) {
-        await ctx.reload();
-        return;
       }
     },
   });

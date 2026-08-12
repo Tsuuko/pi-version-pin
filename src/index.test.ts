@@ -15,6 +15,7 @@ import {
   formatReport,
   isExactVersion,
   latestVersion,
+  listPackages,
   mapInBatches,
   parseNpmSource,
   pinInstalledPackages,
@@ -265,7 +266,7 @@ void test("ignores project packages when the project is untrusted", async () => 
   });
 });
 
-void test("checks all packages and reports per-package registry failures", async () => {
+void test("lists current packages and checks latest versions", async () => {
   await withTempAgent(async ({ agentDir, cwd }) => {
     await writeFile(
       join(agentDir, "settings.json"),
@@ -278,6 +279,12 @@ void test("checks all packages and reports per-package registry failures", async
       "unavailable",
       "1.0.0",
     );
+
+    assert.deepEqual(await listPackages(cwd, false), [
+      { name: "current", scope: "user", current: "1.0.0" },
+      { name: "outdated", scope: "user", current: "1.0.0" },
+      { name: "unavailable", scope: "user", current: "1.0.0" },
+    ]);
 
     const pi = fakePi(async (_command, args) => {
       const target = args.at(-3);
@@ -365,6 +372,7 @@ await appendFile(${JSON.stringify(installLog)}, spec + "\\n");
 });
 
 void test("formats aligned package reports", () => {
+  assert.equal(formatReport([{ name: "pi-chrome", current: "0.15.38" }]), "pi-chrome  0.15.38");
   assert.equal(
     formatReport([
       { name: "pi-chrome", current: "0.15.38", latest: "0.15.41" },

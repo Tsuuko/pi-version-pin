@@ -32,24 +32,38 @@ Restart pi after installation. No configuration is required.
 
 ## Commands
 
+### List installed versions
+
+```text
+/packages
+```
+
+Shows the currently installed versions without accessing npm:
+
+```text
+pi-chrome      0.15.38
+pi-web-access  1.8.2
+pi-tps-status  0.4.1
+```
+
 ### Check for updates
 
 ```text
-/packages-check
+/packages check
 ```
 
 Compares installed versions with npm's `latest` tag:
 
 ```text
-pi-chrome         0.15.38  → 0.15.41
-pi-web-access      1.8.2   ✓ latest
-pi-tps-status      0.4.1   → 0.4.3
+pi-chrome      0.15.38  → 0.15.41
+pi-web-access  1.8.2    ✓ latest
+pi-tps-status  0.4.1    → 0.4.3
 ```
 
 ### Update all packages
 
 ```text
-/packages-check update
+/packages update
 ```
 
 Updates every configured npm-based pi package to `latest`, pins each installed version, and reloads pi. If one package fails, the remaining packages are still processed and the failures are shown in the result.
