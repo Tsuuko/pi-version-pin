@@ -1,0 +1,49 @@
+{
+  "name": "@tsuuko/pi-version-pin",
+  "version": "0.1.0",
+  "description": "Pin installed pi npm packages and check for updates",
+  "keywords": [
+    "pi-package"
+  ],
+  "license": "MIT",
+  "author": "Tsuuko",
+  "files": [
+    "src/index.ts",
+    "README.ja.md"
+  ],
+  "type": "module",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint --type-aware --deny-warnings src",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "test": "node --test src/index.test.ts",
+    "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test",
+    "prepublishOnly": "pnpm check"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.1",
+    "@earendil-works/pi-tui": "0.84.1",
+    "@types/node": "24.13.3",
+    "oxfmt": "0.63.0",
+    "oxlint": "1.78.0",
+    "typescript": "7.0.2"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "packageManager": "pnpm@11.5.1",
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  }
+}
