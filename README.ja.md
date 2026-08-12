@@ -1,6 +1,6 @@
 # @tsuuko/pi-version-pin
 
-[English](./README.md) | **日本語**
+[English](https://github.com/Tsuuko/pi-version-pin#readme) | **日本語**
 
 npm経由で導入した[pi](https://github.com/earendil-works/pi)パッケージを正確なバージョンに固定し、更新を明示的に行えるようにする拡張です。
 

@@ -1,6 +1,6 @@
 # @tsuuko/pi-version-pin
 
-**English** | [日本語](./README.ja.md)
+**English** | [日本語](https://github.com/Tsuuko/pi-version-pin/blob/main/README.ja.md)
 
 A [pi](https://github.com/earendil-works/pi) extension that keeps installed npm-based pi packages pinned to exact versions and makes updates explicit.
 
