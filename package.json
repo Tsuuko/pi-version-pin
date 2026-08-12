@@ -5,8 +5,14 @@
   "keywords": [
     "pi-package"
   ],
+  "homepage": "https://github.com/Tsuuko/pi-version-pin#readme",
+  "bugs": "https://github.com/Tsuuko/pi-version-pin/issues",
   "license": "MIT",
   "author": "Tsuuko",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tsuuko/pi-version-pin.git"
+  },
   "files": [
     "src/index.ts",
     "README.ja.md"
