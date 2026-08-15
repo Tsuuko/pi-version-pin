@@ -1,20 +1,20 @@
-name: Publish to npm
+name: CI
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
+  pull_request:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
-  publish:
+  check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/setup@v2
         with:
           runtime: node@24
-      - run: pnpm publish --no-git-checks
+          cache: true
+      - run: pnpm check
