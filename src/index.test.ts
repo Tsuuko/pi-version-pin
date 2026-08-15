@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { execFile, spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 
 import {
   SettingsManager,
@@ -17,13 +19,48 @@ import {
   latestVersion,
   listPackages,
   mapInBatches,
+  parseGitSource,
   parseNpmSource,
   pinInstalledPackages,
   updatePackages,
 } from "./index.ts";
 
+const runCommand = promisify(execFile);
+const gitAvailable = spawnSync("git", ["--version"], { windowsHide: true }).status === 0;
+
 function fakePi(exec: ExtensionAPI["exec"]): ExtensionAPI {
   return { exec } as ExtensionAPI;
+}
+
+// Delegates to the real command, so git fixtures run offline against local repositories.
+function realPi(): ExtensionAPI {
+  return fakePi(async (command, args, options) => {
+    try {
+      const { stdout, stderr } = await runCommand(command, args, {
+        timeout: options?.timeout,
+        windowsHide: true,
+      });
+      return { stdout, stderr, code: 0, killed: false };
+    } catch (error) {
+      const failure = error as {
+        stdout?: string;
+        stderr?: string;
+        code?: number;
+        killed?: boolean;
+      };
+      return {
+        stdout: failure.stdout ?? "",
+        stderr: failure.stderr ?? String(error),
+        code: failure.code ?? 1,
+        killed: failure.killed ?? false,
+      };
+    }
+  });
+}
+
+async function runGit(args: string[]): Promise<string> {
+  const { stdout } = await runCommand("git", args, { windowsHide: true });
+  return stdout;
 }
 
 function execResult(stdout = "", stderr = "", code = 0): ExecResult {
@@ -87,6 +124,51 @@ void test("recognizes exact npm versions", () => {
   assert.equal(isExactVersion("v1.2.3"), false);
   assert.equal(isExactVersion("01.2.3"), false);
   assert.equal(isExactVersion(undefined), false);
+});
+
+void test("parses git package sources", () => {
+  assert.deepEqual(parseGitSource("git:github.com/user/repo"), {
+    base: "git:github.com/user/repo",
+    name: "github.com/user/repo",
+  });
+  assert.deepEqual(parseGitSource("git:github.com/user/repo@v1.2.0"), {
+    base: "git:github.com/user/repo",
+    ref: "v1.2.0",
+    name: "github.com/user/repo",
+  });
+  assert.deepEqual(parseGitSource("https://github.com/user/repo@feature/x"), {
+    base: "https://github.com/user/repo",
+    ref: "feature/x",
+    name: "github.com/user/repo",
+  });
+  assert.deepEqual(parseGitSource("git:git@github.com:user/repo"), {
+    base: "git:git@github.com:user/repo",
+    name: "github.com/user/repo",
+  });
+  assert.deepEqual(parseGitSource("git:git@github.com:user/repo@v1"), {
+    base: "git:git@github.com:user/repo",
+    ref: "v1",
+    name: "github.com/user/repo",
+  });
+  assert.deepEqual(parseGitSource("ssh://git@github.com/user/repo.git@v1"), {
+    base: "ssh://git@github.com/user/repo.git",
+    ref: "v1",
+    name: "github.com/user/repo",
+  });
+  assert.equal(parseGitSource("npm:foo"), undefined);
+  assert.equal(parseGitSource("github.com/user/repo"), undefined);
+  assert.equal(parseGitSource("./local-package"), undefined);
+});
+
+void test("formats commit hashes short in reports", () => {
+  const hash = "0123456789abcdef0123456789abcdef01234567";
+  assert.equal(
+    formatReport([
+      { name: "github.com/u/r", current: hash, latest: hash },
+      { name: "npm-pkg", current: "1.0.0" },
+    ]),
+    ["github.com/u/r  0123456  ✓ latest", "npm-pkg         1.0.0"].join("\n"),
+  );
 });
 
 void test("maps at most five items concurrently", async () => {
@@ -199,7 +281,11 @@ void test("pins installed global and project packages", async () => {
       "2.3.4",
     );
 
-    const result = await pinInstalledPackages(cwd, true);
+    const result = await pinInstalledPackages(
+      fakePi(async () => execResult()),
+      cwd,
+      true,
+    );
     const globalSettings = JSON.parse(await readFile(join(agentDir, "settings.json"), "utf8"));
     const projectSettings = JSON.parse(await readFile(join(cwd, ".pi", "settings.json"), "utf8"));
 
@@ -216,6 +302,12 @@ void test("pins installed global and project packages", async () => {
         scope: "user",
         current: "?",
         error: "Invalid installed version: latest",
+      },
+      {
+        name: "github.com/example/package",
+        scope: "user",
+        current: "?",
+        error: "Package is not installed",
       },
     ]);
     assert.deepEqual(new Set(result.pinned), new Set(["demo@1.2.3", "@scope/project@2.3.4"]));
@@ -256,7 +348,11 @@ void test("ignores project packages when the project is untrusted", async () => 
       "2.0.0",
     );
 
-    const result = await pinInstalledPackages(cwd, false);
+    const result = await pinInstalledPackages(
+      fakePi(async () => execResult()),
+      cwd,
+      false,
+    );
     const globalSettings = JSON.parse(await readFile(join(agentDir, "settings.json"), "utf8"));
     const projectSettings = JSON.parse(await readFile(join(cwd, ".pi", "settings.json"), "utf8"));
 
@@ -280,11 +376,18 @@ void test("lists current packages and checks latest versions", async () => {
       "1.0.0",
     );
 
-    assert.deepEqual(await listPackages(cwd, false), [
-      { name: "current", scope: "user", current: "1.0.0" },
-      { name: "outdated", scope: "user", current: "1.0.0" },
-      { name: "unavailable", scope: "user", current: "1.0.0" },
-    ]);
+    assert.deepEqual(
+      await listPackages(
+        fakePi(async () => execResult()),
+        cwd,
+        false,
+      ),
+      [
+        { name: "current", scope: "user", current: "1.0.0" },
+        { name: "outdated", scope: "user", current: "1.0.0" },
+        { name: "unavailable", scope: "user", current: "1.0.0" },
+      ],
+    );
 
     const pi = fakePi(async (_command, args) => {
       const target = args.at(-3);
@@ -394,3 +497,97 @@ void test("formats aligned package reports", () => {
     ["same (user)     1.0.0  ✓ latest", "same (project)  2.0.0  → 2.1.0"].join("\n"),
   );
 });
+
+// Builds a bare origin plus a clone at the path pi would install it to (git sources
+// resolve to <agentDir>/git/<host>/<path> regardless of ref).
+async function makeGitFixture(
+  root: string,
+  clonePath: string,
+): Promise<{ head: string; work: string }> {
+  const origin = join(root, "origin.git");
+  const work = join(root, "work");
+  await runGit(["init", "--bare", "-q", origin]);
+  await runGit(["init", "-q", work]);
+  await runGit(["-C", work, "config", "user.email", "test@example.com"]);
+  await runGit(["-C", work, "config", "user.name", "test"]);
+  await runGit(["-C", work, "commit", "--allow-empty", "-q", "-m", "one"]);
+  await runGit(["-C", work, "remote", "add", "origin", origin]);
+  await runGit(["-C", work, "push", "-q", "-u", "origin", "HEAD"]);
+  await runGit(["clone", "-q", origin, clonePath]);
+  await runGit(["-C", clonePath, "remote", "set-url", "origin", origin]);
+  const head = (await runGit(["-C", clonePath, "rev-parse", "HEAD"])).trim();
+  return { head, work };
+}
+
+void test("pins git packages to commit hashes", { skip: !gitAvailable }, async () => {
+  await withTempAgent(async ({ root, agentDir, cwd }) => {
+    const clonePath = join(agentDir, "git", "github.com", "example", "pkg");
+    const { head } = await makeGitFixture(root, clonePath);
+    const settingsPath = join(agentDir, "settings.json");
+    const pi = realPi();
+
+    await writeFile(settingsPath, JSON.stringify({ packages: ["git:github.com/example/pkg"] }));
+    let result = await pinInstalledPackages(pi, cwd, true);
+    assert.deepEqual(result, {
+      pinned: [`github.com/example/pkg@${head.slice(0, 7)}`],
+      errors: [],
+    });
+    assert.deepEqual(JSON.parse(await readFile(settingsPath, "utf8")).packages, [
+      `git:github.com/example/pkg@${head}`,
+    ]);
+
+    await writeFile(
+      settingsPath,
+      JSON.stringify({ packages: [`git:github.com/example/pkg@${head}`] }),
+    );
+    result = await pinInstalledPackages(pi, cwd, true);
+    assert.deepEqual(result, { pinned: [], errors: [] });
+
+    await writeFile(
+      settingsPath,
+      JSON.stringify({ packages: ["git:github.com/example/pkg@v1.2.0"] }),
+    );
+    result = await pinInstalledPackages(pi, cwd, true);
+    assert.deepEqual(result.pinned, [`github.com/example/pkg@${head.slice(0, 7)}`]);
+    assert.deepEqual(JSON.parse(await readFile(settingsPath, "utf8")).packages, [
+      `git:github.com/example/pkg@${head}`,
+    ]);
+  });
+});
+
+void test(
+  "checks and updates git packages against the remote head",
+  { skip: !gitAvailable },
+  async () => {
+    await withTempAgent(async ({ root, agentDir, cwd }) => {
+      const clonePath = join(agentDir, "git", "github.com", "example", "pkg");
+      const { head, work } = await makeGitFixture(root, clonePath);
+      const settingsPath = join(agentDir, "settings.json");
+      const pi = realPi();
+      await writeFile(
+        settingsPath,
+        JSON.stringify({ packages: ["git:github.com/example/pkg@v1"] }),
+      );
+
+      // current == remote HEAD: no install, settings rewritten to the commit hash
+      const update = await updatePackages(pi, cwd, true);
+      assert.equal(update.needsReload, false);
+      assert.deepEqual(update.rows, [
+        { name: "github.com/example/pkg", scope: "user", current: head, latest: head },
+      ]);
+      assert.deepEqual(JSON.parse(await readFile(settingsPath, "utf8")).packages, [
+        `git:github.com/example/pkg@${head}`,
+      ]);
+
+      // remote moves ahead: check reports the new head, update falls back to error only if install fails
+      await runGit(["-C", work, "commit", "--allow-empty", "-q", "-m", "two"]);
+      await runGit(["-C", work, "push", "-q", "origin", "HEAD"]);
+      const newHead = (await runGit(["-C", work, "rev-parse", "HEAD"])).trim();
+
+      const rows = await checkPackages(pi, cwd, true);
+      assert.deepEqual(rows, [
+        { name: "github.com/example/pkg", scope: "user", current: head, latest: newHead },
+      ]);
+    });
+  },
+);

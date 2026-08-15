@@ -1,7 +1,7 @@
 {
   "name": "@tsuuko/pi-version-pin",
   "version": "0.2.0",
-  "description": "Pin installed pi npm packages and check for updates",
+  "description": "Pin installed pi npm packages and git packages to exact versions and commit hashes, and check for updates",
   "keywords": [
     "pi-package"
   ],
